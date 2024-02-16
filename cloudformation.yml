@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Customer Agreement update checker
+
+Resources:
+  AgreementDateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: agreement_date
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  UpdateNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: update-notification
+  
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      Endpoint: !Ref NotificationEmailAddress
+      TopicArn: !Ref UpdateNotificationTopic
+
+  CAUpdateLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: LambdaDynamoDBAndSNSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                Resource: !GetAtt AgreementDateTable.Arn
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref UpdateNotificationTopic
+
+
+  CAUpdateFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ca-update-check
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt CAUpdateLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: sciar-testbucket
+        S3Key: lambda_function.zip
+      Runtime: python3.12
+      Timeout: 30
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref AgreementDateTable
+          SNS_TOPIC_ARN: !Ref UpdateNotificationTopic
+
+  DailyTriggerRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: DailyLambdaTrigger
+      ScheduleExpression: cron(0 12 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt CAUpdateFunction.Arn
+          Id: TargetFunction
+  
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt CAUpdateFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DailyTriggerRule.Arn
+
+Parameters:
+  NotificationEmailAddress:
+    Description: Email address to receive notifications
+    Type: String
+
+Outputs:
+  DynamoDBTableName:
+    Description: "DynamoDB Table Name"
+    Value: !Ref AgreementDateTable
+
+  SNSTopicARN:
+    Description: "SNS Topic ARN"
+    Value: !Ref UpdateNotificationTopic
+
+  LambdaFunctionARN:
+    Description: "Lambda Function ARN"
+    Value: !GetAtt CAUpdateFunction.Arn
