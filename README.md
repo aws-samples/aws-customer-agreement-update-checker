@@ -1,9 +1,11 @@
-## AWS Customer Agreement Update Checker
+# AWS Customer Agreement Update Checker
 
 This repository contains a simple solution to check and notify when it detects a change to the AWS customer agreement posted at https://aws.amazon.com/agreement/
 
 
 The solution uses an Amazon EventBridge rule which triggers a Lambda function daily. This function stores the "Last Updated" date specified on the agreement page in an SSM parameter and compares the date found with the stored parameter. When a new date is detected, an SNS notification is sent to the email addresses subscribed to the topic.
+
+This sample can be modified with any additional requirements.
 
 ## Deployment
 
