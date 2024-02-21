@@ -2,18 +2,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: Customer Agreement update checker
 
 Resources:
-  AgreementDateTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: agreement_date
-      AttributeDefinitions:
-        - AttributeName: id
-          AttributeType: S
-      KeySchema:
-        - AttributeName: id
-          KeyType: HASH
-      BillingMode: PAY_PER_REQUEST
-
   UpdateNotificationTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -26,6 +14,13 @@ Resources:
       Endpoint: !Ref NotificationEmailAddress
       TopicArn: !Ref UpdateNotificationTopic
 
+  CAUpdateLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:  
+      LogGroupClass: INFREQUENT_ACCESS
+      LogGroupName: CAUpdateLambdaLogGroup
+      RetentionInDays: 7
+
   CAUpdateLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -36,38 +31,39 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        - PolicyName: LambdaDynamoDBAndSNSAccess
+        - PolicyName: LambdaDynamoDBAndSNSAccessAndCloudWatch
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              - Effect: Allow
+              - Effect: "Allow"
                 Action:
-                  - dynamodb:GetItem
-                  - dynamodb:PutItem
-                Resource: !GetAtt AgreementDateTable.Arn
+                  - "ssm:GetParameter"
+                  - "ssm:PutParameter"
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/customer_agreement_last_updated_date"
               - Effect: Allow
                 Action:
                   - sns:Publish
                 Resource: !Ref UpdateNotificationTopic
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt CAUpdateLambdaLogGroup.Arn
 
 
   CAUpdateFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: ca-update-check
-      Handler: lambda_function.lambda_handler
+      Handler: ca_update_check.lambda_handler
       Role: !GetAtt CAUpdateLambdaExecutionRole.Arn
-      Code:
-        S3Bucket: sciar-testbucket
-        S3Key: lambda_function.zip
+      Code: ca_update_check
       Runtime: python3.12
       Timeout: 30
       Environment:
         Variables:
-          DYNAMODB_TABLE_NAME: !Ref AgreementDateTable
           SNS_TOPIC_ARN: !Ref UpdateNotificationTopic
 
   DailyTriggerRule:
@@ -88,16 +84,20 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt DailyTriggerRule.Arn
 
+  LastUpdatedDateParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: customer_agreement_last_updated_date
+      Type: String
+      Value: "2024-01-01"
+      Description: "The last date the agreement was updated."
+
 Parameters:
   NotificationEmailAddress:
     Description: Email address to receive notifications
     Type: String
 
 Outputs:
-  DynamoDBTableName:
-    Description: "DynamoDB Table Name"
-    Value: !Ref AgreementDateTable
-
   SNSTopicARN:
     Description: "SNS Topic ARN"
     Value: !Ref UpdateNotificationTopic
