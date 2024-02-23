@@ -10,7 +10,7 @@ This sample can be modified with any additional requirements.
 ## Deployment
 
 ### Clone the repository
-`git@github.com:aws-samples/aws-customer-agreement-update-checker.git`
+`git clone git@github.com:aws-samples/aws-customer-agreement-update-checker.git`
 
 ### Navigate to the cloned repository
 `cd aws-customer-agreement-update-checker`
